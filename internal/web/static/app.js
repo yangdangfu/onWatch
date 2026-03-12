@@ -59,6 +59,8 @@ function getCurrentProvider() {
   if (antigravityGrid) return 'antigravity';
   const minimaxGrid = document.getElementById('quota-grid-minimax');
   if (minimaxGrid) return 'minimax';
+  const kimiGrid = document.getElementById('quota-grid-kimi');
+  if (kimiGrid) return 'kimi';
   const grid = document.getElementById('quota-grid');
   return (grid && grid.dataset.provider) || 'synthetic';
 }
@@ -624,6 +626,20 @@ const minimaxChartColorFallback = [
   { border: '#BB8FCE', bg: 'rgba(187, 143, 206, 0.08)' },
 ];
 
+const kimiDisplayNames = {
+  'tokens': 'Tokens',
+  'time': 'Time',
+};
+
+const kimiChartColorMap = {
+  tokens: { border: '#FF6B6B', bg: 'rgba(255, 107, 107, 0.08)' },
+  time: { border: '#4ECDC4', bg: 'rgba(78, 205, 196, 0.08)' },
+};
+const kimiChartColorFallback = [
+  { border: '#F97316', bg: 'rgba(249, 115, 102, 0.08)' },
+  { border: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.08)' },
+];
+
 // ── Renewal Categories for Cycle Overview ──
 
 const renewalCategories = {
@@ -658,6 +674,10 @@ const renewalCategories = {
   ],
   minimax: [
     { label: 'Coding Plan', groupBy: 'coding_plan' }
+  ],
+  kimi: [
+    { label: 'Tokens', groupBy: 'tokens' },
+    { label: 'Time', groupBy: 'time' }
   ]
 };
 
@@ -2533,6 +2553,10 @@ async function fetchCurrent() {
         updateCard('tokensLimit', data.tokensLimit);
         updateCard('timeLimit', data.timeLimit);
         updateCard('toolCalls', data.toolCalls);
+      } else if (provider === 'kimi') {
+        updateCard('tokensLimit', data.tokensLimit);
+        updateCard('timeLimit', data.timeLimit);
+        updateCard('toolCalls', data.toolCalls);
       } else {
         updateCard('subscription', data.subscription);
         updateCard('search', data.search);
@@ -4117,6 +4141,8 @@ function updateBothCharts(data, range = '6h') {
       datasets = createDynamicDatasets(slot.rows, {}, antigravityChartColorMap, antigravityChartColorFallback, 'antigravity');
     } else if (slot.provider === 'minimax') {
       datasets = createDynamicDatasets(slot.rows, minimaxDisplayNames, minimaxChartColorMap, minimaxChartColorFallback, 'minimax');
+    } else if (slot.provider === 'kimi') {
+      datasets = createDynamicDatasets(slot.rows, kimiDisplayNames, kimiChartColorMap, kimiChartColorFallback, 'kimi');
     }
 
     if (datasets.length === 0) return;
@@ -6991,7 +7017,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Preload providers whose history tables should appear immediately.
     const activeProvider = getCurrentProvider();
-    const eagerHistoryProviders = new Set(['antigravity', 'minimax']);
+    const eagerHistoryProviders = new Set(['antigravity', 'minimax', 'kimi']);
     if (eagerHistoryProviders.has(activeProvider) && shouldShowHistoryTables(activeProvider)) {
       _lazyLoaded.add('.cycle-overview-section');
       _lazyLoaded.add('.cycles-section');

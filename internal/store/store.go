@@ -447,6 +447,45 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_minimax_model_values_name ON minimax_model_values(model_name);
 		CREATE INDEX IF NOT EXISTS idx_minimax_cycles_name_start ON minimax_reset_cycles(model_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_minimax_cycles_name_active ON minimax_reset_cycles(model_name) WHERE cycle_end IS NULL;
+
+		-- Kimi-specific tables
+		CREATE TABLE IF NOT EXISTS kimi_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL DEFAULT 'kimi',
+			captured_at TEXT NOT NULL,
+			time_limit INTEGER NOT NULL,
+			time_unit INTEGER NOT NULL,
+			time_number INTEGER NOT NULL,
+			time_usage REAL NOT NULL,
+			time_current_value REAL NOT NULL,
+			time_remaining REAL NOT NULL,
+			time_percentage INTEGER NOT NULL,
+			time_usage_details TEXT NOT NULL DEFAULT '',
+			tokens_limit INTEGER NOT NULL,
+			tokens_unit INTEGER NOT NULL,
+			tokens_number INTEGER NOT NULL,
+			tokens_usage REAL NOT NULL,
+			tokens_current_value REAL NOT NULL,
+			tokens_remaining REAL NOT NULL,
+			tokens_percentage INTEGER NOT NULL,
+			tokens_next_reset TEXT
+		);
+
+		CREATE TABLE IF NOT EXISTS kimi_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_type TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			next_reset TEXT,
+			peak_value INTEGER NOT NULL DEFAULT 0,
+			total_delta INTEGER NOT NULL DEFAULT 0
+		);
+
+		-- Kimi indexes
+		CREATE INDEX IF NOT EXISTS idx_kimi_snapshots_captured ON kimi_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_kimi_snapshots_tokens_reset ON kimi_snapshots(tokens_next_reset);
+		CREATE INDEX IF NOT EXISTS idx_kimi_cycles_type_start ON kimi_reset_cycles(quota_type, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_kimi_cycles_type_active ON kimi_reset_cycles(quota_type, cycle_end) WHERE cycle_end IS NULL;
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {

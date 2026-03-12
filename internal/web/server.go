@@ -81,6 +81,13 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc("/api/minimax/insights", func(w http.ResponseWriter, r *http.Request) {
 		handler.insightsMiniMax(w, r, parseInsightsRange(r.URL.Query().Get("range")))
 	})
+	mux.HandleFunc("/api/kimi/current", handler.currentKimi)
+	mux.HandleFunc("/api/kimi/history", handler.historyKimi)
+	mux.HandleFunc("/api/kimi/cycles", handler.cyclesKimi)
+	mux.HandleFunc("/api/kimi/cycle/overview", handler.cycleOverviewKimi)
+	mux.HandleFunc("/api/kimi/insights", func(w http.ResponseWriter, r *http.Request) {
+		handler.insightsKimi(w, r, parseInsightsRange(r.URL.Query().Get("range")))
+	})
 
 	// Service worker (must be served from root scope, no-cache)
 	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {

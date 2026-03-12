@@ -79,6 +79,7 @@ type Handler struct {
 	codexTracker       *tracker.CodexTracker
 	antigravityTracker *tracker.AntigravityTracker
 	minimaxTracker     *tracker.MiniMaxTracker
+	kimiTracker        *tracker.KimiTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -322,6 +323,11 @@ func (h *Handler) SetAntigravityTracker(t *tracker.AntigravityTracker) {
 // SetMiniMaxTracker sets the MiniMax tracker for usage summary enrichment.
 func (h *Handler) SetMiniMaxTracker(t *tracker.MiniMaxTracker) {
 	h.minimaxTracker = t
+}
+
+// SetKimiTracker sets the Kimi tracker for usage summary enrichment.
+func (h *Handler) SetKimiTracker(t *tracker.KimiTracker) {
+	h.kimiTracker = t
 }
 
 // SetAgentManager sets provider agent lifecycle controller.
@@ -595,6 +601,7 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "codex", Name: "Codex", Description: "OpenAI Codex usage tracking", AutoDetectable: true},
 		{Key: "antigravity", Name: "Antigravity", Description: "Antigravity model usage tracking", AutoDetectable: true},
 		{Key: "minimax", Name: "MiniMax", Description: "MiniMax Coding Plan usage tracking"},
+		{Key: "kimi", Name: "Kimi", Description: "Kimi Code usage tracking"},
 	}
 }
 
@@ -635,6 +642,8 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return h.detectAntigravityConnection() != nil
 	case "minimax":
 		return strings.TrimSpace(h.config.MiniMaxAPIKey) != ""
+	case "kimi":
+		return strings.TrimSpace(h.config.KimiAPIKey) != ""
 	default:
 		return false
 	}
@@ -1006,6 +1015,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	hasCodex := hasVisibleProvider("codex")
 	hasAntigravity := hasVisibleProvider("antigravity")
 	hasMiniMax := hasVisibleProvider("minimax")
+	hasKimi := hasVisibleProvider("kimi")
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
@@ -1018,6 +1028,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"HasCodex":        hasCodex,
 		"HasAntigravity":  hasAntigravity,
 		"HasMiniMax":      hasMiniMax,
+		"HasKimi":         hasKimi,
 		"PollIntervalSec": h.getPollIntervalSec(),
 	}
 
@@ -1054,6 +1065,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentAntigravity(w, r)
 	case "minimax":
 		h.currentMiniMax(w, r)
+	case "kimi":
+		h.currentKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1100,6 +1113,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("minimax") && providerTelemetryEnabled(visibility, "minimax") {
 		response["minimax"] = h.buildMiniMaxCurrent()
+	}
+	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
+		response["kimi"] = h.buildKimiCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -1435,6 +1451,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyAntigravity(w, r)
 	case "minimax":
 		h.historyMiniMax(w, r)
+	case "kimi":
+		h.historyKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -1799,6 +1817,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesAntigravity(w, r)
 	case "minimax":
 		h.cyclesMiniMax(w, r)
+	case "kimi":
+		h.cyclesKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2815,6 +2835,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsAntigravity(w, r, rangeDur)
 	case "minimax":
 		h.insightsMiniMax(w, r, rangeDur)
+	case "kimi":
+		h.insightsKimi(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4860,6 +4882,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewAntigravity(w, r)
 	case "minimax":
 		h.cycleOverviewMiniMax(w, r)
+	case "kimi":
+		h.cycleOverviewKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -7609,6 +7633,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryAntigravity(w, r)
 	case "minimax":
 		h.loggingHistoryMiniMax(w, r)
+	case "kimi":
+		h.loggingHistoryKimi(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -8127,6 +8153,73 @@ func (h *Handler) loggingHistoryMiniMax(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// loggingHistoryKimi returns Kimi logging history for the logging history table.
+func (h *Handler) loggingHistoryKimi(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}})
+		return
+	}
+
+	start, end, limit := h.loggingHistoryRangeAndLimit(r)
+	snapshots, err := h.store.QueryKimiRange(start, end, limit)
+	if err != nil {
+		h.logger.Error("failed to query Kimi logging history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query logging history")
+		return
+	}
+
+	quotaNames := []string{"tokens", "time"}
+	capturedAt := make([]time.Time, 0, len(snapshots))
+	ids := make([]int64, 0, len(snapshots))
+	series := make([]map[string]loggingHistoryCrossQuota, 0, len(snapshots))
+
+	for _, snap := range snapshots {
+		capturedAt = append(capturedAt, snap.CapturedAt)
+		ids = append(ids, snap.ID)
+		row := map[string]loggingHistoryCrossQuota{}
+
+		// Tokens quota
+		if snap.TokensUsage > 0 {
+			percent := 0.0
+			if snap.TokensUsage > 0 {
+				percent = (snap.TokensCurrentValue / snap.TokensUsage) * 100
+			}
+			row["tokens"] = loggingHistoryCrossQuota{
+				Name:     "tokens",
+				Value:    snap.TokensCurrentValue,
+				Limit:    snap.TokensUsage,
+				Percent:  percent,
+				HasValue: true,
+				HasLimit: true,
+			}
+		}
+
+		// Time quota
+		if snap.TimeUsage > 0 {
+			percent := 0.0
+			if snap.TimeUsage > 0 {
+				percent = (snap.TimeCurrentValue / snap.TimeUsage) * 100
+			}
+			row["time"] = loggingHistoryCrossQuota{
+				Name:     "time",
+				Value:    snap.TimeCurrentValue,
+				Limit:    snap.TimeUsage,
+				Percent:  percent,
+				HasValue: true,
+				HasLimit: true,
+			}
+		}
+
+		series = append(series, row)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"provider":   "kimi",
+		"quotaNames": quotaNames,
+		"logs":       loggingHistoryRowsFromSnapshots(capturedAt, ids, quotaNames, series),
+	})
+}
+
 // cycleOverviewCopilot returns Copilot cycle overview with cross-quota data.
 func (h *Handler) cycleOverviewCopilot(w http.ResponseWriter, r *http.Request) {
 	if h.store == nil {
@@ -8167,4 +8260,419 @@ func (h *Handler) cycleOverviewCopilot(w http.ResponseWriter, r *http.Request) {
 		"quotaNames": quotaNames,
 		"cycles":     cycleOverviewRowsToJSON(rows),
 	})
+}
+
+// ── Kimi Handlers ──
+
+// currentKimi returns current Kimi quota status.
+func (h *Handler) currentKimi(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.buildKimiCurrent())
+}
+
+// buildKimiCurrent builds the Kimi current quota response map.
+func (h *Handler) buildKimiCurrent() map[string]interface{} {
+	now := time.Now().UTC()
+	response := map[string]interface{}{
+		"capturedAt":  now.Format(time.RFC3339),
+		"tokensLimit": buildEmptyKimiQuotaResponse("Tokens Limit", "Token consumption budget"),
+		"timeLimit":   buildEmptyKimiQuotaResponse("Time Limit", "Tool call time budget"),
+		"toolCalls":   buildEmptyKimiQuotaResponse("Tool Calls", "Tool call usage breakdown"),
+	}
+
+	if h.store != nil {
+		latest, err := h.store.QueryLatestKimi()
+		if err != nil {
+			h.logger.Error("failed to query latest Kimi snapshot", "error", err)
+			return response
+		}
+
+		if latest != nil {
+			response["capturedAt"] = latest.CapturedAt.Format(time.RFC3339)
+			tokensResp := buildKimiTokensQuotaResponse(latest)
+			timeResp := buildKimiTimeQuotaResponse(latest)
+
+			// Enrich with tracker data (rate, projection)
+			if h.kimiTracker != nil {
+				if tokensSummary, err := h.kimiTracker.UsageSummary("tokens"); err == nil && tokensSummary != nil {
+					tokensResp["currentRate"] = tokensSummary.CurrentRate
+					tokensResp["projectedUsage"] = tokensSummary.ProjectedUsage
+				}
+				if timeSummary, err := h.kimiTracker.UsageSummary("time"); err == nil && timeSummary != nil {
+					timeResp["currentRate"] = timeSummary.CurrentRate
+					timeResp["projectedUsage"] = timeSummary.ProjectedUsage
+				}
+			}
+
+			response["tokensLimit"] = tokensResp
+			response["timeLimit"] = timeResp
+			response["toolCalls"] = buildKimiToolCallsResponse(latest)
+		}
+	}
+
+	return response
+}
+
+func buildEmptyKimiQuotaResponse(name, description string) map[string]interface{} {
+	return map[string]interface{}{
+		"name":                  name,
+		"description":           description,
+		"usage":                 0.0,
+		"limit":                 0.0,
+		"percent":               0.0,
+		"status":                "healthy",
+		"renewsAt":              time.Now().UTC().Format(time.RFC3339),
+		"timeUntilReset":        "0m",
+		"timeUntilResetSeconds": 0,
+	}
+}
+
+func buildKimiTokensQuotaResponse(snapshot *api.KimiSnapshot) map[string]interface{} {
+	budget := snapshot.TokensUsage
+	currentUsage := snapshot.TokensCurrentValue
+	percent := float64(snapshot.TokensPercentage)
+
+	status := "healthy"
+	if percent >= 95 {
+		status = "critical"
+	} else if percent >= 80 {
+		status = "danger"
+	} else if percent >= 50 {
+		status = "warning"
+	}
+
+	result := map[string]interface{}{
+		"name":        "Weekly Usage",
+		"description": "Weekly message quota",
+		"usage":       currentUsage,
+		"limit":       budget,
+		"percent":     percent,
+		"status":      status,
+	}
+
+	if snapshot.TokensNextResetTime != nil {
+		timeUntilReset := time.Until(*snapshot.TokensNextResetTime)
+		result["renewsAt"] = snapshot.TokensNextResetTime.Format(time.RFC3339)
+		result["timeUntilReset"] = formatDuration(timeUntilReset)
+		result["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
+	} else {
+		result["renewsAt"] = time.Now().UTC().Format(time.RFC3339)
+		result["timeUntilReset"] = "N/A"
+		result["timeUntilResetSeconds"] = 0
+	}
+
+	return result
+}
+
+func buildKimiTimeQuotaResponse(snapshot *api.KimiSnapshot) map[string]interface{} {
+	budget := snapshot.TimeUsage
+	currentUsage := snapshot.TimeCurrentValue
+	percent := float64(snapshot.TimePercentage)
+
+	status := "healthy"
+	if percent >= 95 {
+		status = "critical"
+	} else if percent >= 80 {
+		status = "danger"
+	} else if percent >= 50 {
+		status = "warning"
+	}
+
+	return map[string]interface{}{
+		"name":                  "5-Hour Window",
+		"description":           "5-hour rolling rate limit",
+		"usage":                 currentUsage,
+		"limit":                 budget,
+		"percent":               percent,
+		"status":                status,
+		"renewsAt":              time.Now().UTC().Format(time.RFC3339),
+		"timeUntilReset":        "N/A",
+		"timeUntilResetSeconds": 0,
+	}
+}
+
+func buildKimiToolCallsResponse(snapshot *api.KimiSnapshot) map[string]interface{} {
+	var totalCalls float64
+	var details []api.KimiUsageDetail
+
+	if snapshot.TimeUsageDetails != "" {
+		if err := json.Unmarshal([]byte(snapshot.TimeUsageDetails), &details); err == nil {
+			for _, d := range details {
+				totalCalls += d.Usage
+			}
+		}
+	}
+
+	budget := snapshot.TimeUsage
+	percent := 0.0
+	if budget > 0 {
+		percent = (totalCalls / budget) * 100
+	}
+
+	status := "healthy"
+	if percent >= 95 {
+		status = "critical"
+	} else if percent >= 80 {
+		status = "danger"
+	} else if percent >= 50 {
+		status = "warning"
+	}
+
+	result := map[string]interface{}{
+		"name":                  "Tool Calls",
+		"description":           "Tool call usage breakdown",
+		"usage":                 totalCalls,
+		"limit":                 budget,
+		"percent":               percent,
+		"status":                status,
+		"renewsAt":              time.Now().UTC().Format(time.RFC3339),
+		"timeUntilReset":        "N/A",
+		"timeUntilResetSeconds": 0,
+	}
+
+	if len(details) > 0 {
+		result["usageDetails"] = details
+	}
+
+	return result
+}
+
+// historyKimi returns Kimi usage history for charts.
+func (h *Handler) historyKimi(w http.ResponseWriter, r *http.Request) {
+	rangeStr := r.URL.Query().Get("range")
+	if rangeStr == "" {
+		rangeStr = "6h"
+	}
+
+	rangeDur, err := parseTimeRange(rangeStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid range")
+		return
+	}
+
+	now := time.Now().UTC()
+	snapshots, err := h.store.QueryKimiRange(now.Add(-rangeDur), now, maxChartPoints)
+	if err != nil {
+		h.logger.Error("failed to query Kimi history", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query history")
+		return
+	}
+
+	// Downsample if needed
+	step := downsampleStep(len(snapshots), maxChartPoints)
+	downsampled := make([]*api.KimiSnapshot, 0, len(snapshots)/step+1)
+	for i := 0; i < len(snapshots); i += step {
+		downsampled = append(downsampled, snapshots[i])
+	}
+
+	response := map[string]interface{}{
+		"provider":   "kimi",
+		"range":      rangeStr,
+		"capturedAt": now.Format(time.RFC3339),
+		"points":     len(downsampled),
+		"series": map[string]interface{}{
+			"tokens": kimiTokensSeries(downsampled),
+			"time":   kimiTimeSeries(downsampled),
+		},
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+func kimiTokensSeries(snapshots []*api.KimiSnapshot) map[string]interface{} {
+	labels := make([]string, 0, len(snapshots))
+	tokensData := make([]float64, 0, len(snapshots))
+
+	for _, s := range snapshots {
+		labels = append(labels, s.CapturedAt.Format(time.RFC3339))
+		tokensData = append(tokensData, s.TokensCurrentValue)
+	}
+
+	return map[string]interface{}{
+		"labels": labels,
+		"datasets": []map[string]interface{}{
+			{
+				"label": "Tokens Used",
+				"data":  tokensData,
+			},
+		},
+	}
+}
+
+func kimiTimeSeries(snapshots []*api.KimiSnapshot) map[string]interface{} {
+	labels := make([]string, 0, len(snapshots))
+	timeData := make([]float64, 0, len(snapshots))
+
+	for _, s := range snapshots {
+		labels = append(labels, s.CapturedAt.Format(time.RFC3339))
+		timeData = append(timeData, s.TimeCurrentValue)
+	}
+
+	return map[string]interface{}{
+		"labels": labels,
+		"datasets": []map[string]interface{}{
+			{
+				"label": "Time Used",
+				"data":  timeData,
+			},
+		},
+	}
+}
+
+// cyclesKimi returns Kimi reset cycles.
+func (h *Handler) cyclesKimi(w http.ResponseWriter, r *http.Request) {
+	quotaType := r.URL.Query().Get("quota")
+	if quotaType == "" {
+		quotaType = "tokens"
+	}
+
+	rangeMs, err := strconv.ParseInt(r.URL.Query().Get("range"), 10, 64)
+	if err != nil || rangeMs <= 0 {
+		rangeMs = int64(3 * 24 * time.Hour / time.Millisecond) // 3 days default
+	}
+
+	since := time.Now().UTC().Add(-time.Duration(rangeMs) * time.Millisecond)
+	cycles, err := h.store.QueryKimiCyclesSince(quotaType, since)
+	if err != nil {
+		h.logger.Error("failed to query Kimi cycles", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycles")
+		return
+	}
+
+	response := make([]map[string]interface{}, 0, len(cycles))
+	for _, cycle := range cycles {
+		item := map[string]interface{}{
+			"id":         cycle.ID,
+			"quotaType":  cycle.QuotaType,
+			"cycleStart": cycle.CycleStart.Format(time.RFC3339),
+			"cycleEnd":   nil,
+			"peakValue":  cycle.PeakValue,
+			"totalDelta": cycle.TotalDelta,
+		}
+		if cycle.CycleEnd != nil {
+			item["cycleEnd"] = cycle.CycleEnd.Format(time.RFC3339)
+		}
+		if cycle.NextReset != nil {
+			item["nextReset"] = cycle.NextReset.Format(time.RFC3339)
+		}
+		response = append(response, item)
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+// cycleOverviewKimi returns Kimi cycle overview with cross-quota data.
+func (h *Handler) cycleOverviewKimi(w http.ResponseWriter, r *http.Request) {
+	groupBy := r.URL.Query().Get("groupBy")
+	if groupBy == "" {
+		groupBy = "tokens"
+	}
+
+	rows, err := h.store.QueryKimiCycleOverview(groupBy, 50)
+	if err != nil {
+		h.logger.Error("failed to query Kimi cycle overview", "error", err)
+		respondError(w, http.StatusInternalServerError, "failed to query cycle overview")
+		return
+	}
+
+	quotaNames := []string{"tokens", "time"}
+	for _, row := range rows {
+		if len(row.CrossQuotas) > 0 {
+			quotaNames = make([]string, 0, len(row.CrossQuotas))
+			for _, cq := range row.CrossQuotas {
+				quotaNames = append(quotaNames, cq.Name)
+			}
+			break
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groupBy":    groupBy,
+		"provider":   "kimi",
+		"quotaNames": quotaNames,
+		"cycles":     cycleOverviewRowsToJSON(rows),
+	})
+}
+
+// insightsKimi returns Kimi usage insights.
+func (h *Handler) insightsKimi(w http.ResponseWriter, r *http.Request, rangeDur time.Duration) {
+	resp := insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
+
+	if h.store == nil {
+		respondJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	latest, err := h.store.QueryLatestKimi()
+	if err != nil || latest == nil {
+		respondJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	// Build tokens insight
+	tokensPercent := float64(latest.TokensPercentage)
+	tokensStatus := "healthy"
+	if tokensPercent >= 95 {
+		tokensStatus = "critical"
+	} else if tokensPercent >= 80 {
+		tokensStatus = "danger"
+	} else if tokensPercent >= 50 {
+		tokensStatus = "warning"
+	}
+
+	timeUntilReset := "N/A"
+	if latest.TokensNextResetTime != nil {
+		timeUntilReset = formatDuration(time.Until(*latest.TokensNextResetTime))
+	}
+
+	resp.Stats = append(resp.Stats,
+		insightStat{
+			Value:     fmt.Sprintf("%.0f / %.0f", latest.TokensCurrentValue, latest.TokensUsage),
+			Label:     "Tokens Usage",
+			Sublabel:  fmt.Sprintf("%.1f%% used", tokensPercent),
+		},
+		insightStat{
+			Value:     fmt.Sprintf("%.0f / %.0f", latest.TimeCurrentValue, latest.TimeUsage),
+			Label:     "Time Usage",
+			Sublabel:  fmt.Sprintf("%.1f%% used", float64(latest.TimePercentage)),
+		},
+		insightStat{
+			Value:     timeUntilReset,
+			Label:     "Resets In",
+			Sublabel:  "Token budget renewal",
+		},
+	)
+
+	resp.Insights = append(resp.Insights, insightItem{
+		Key:      "tokens_status",
+		Type:     "factual",
+		Severity: kimiInsightSeverity(tokensPercent),
+		Title:    "Token Usage Status",
+		Desc:     fmt.Sprintf("Current token usage is %.1f%% (%.0f of %.0f). %s", tokensPercent, latest.TokensCurrentValue, latest.TokensUsage, kimiStatusMessage(tokensStatus)),
+	})
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func kimiInsightSeverity(percent float64) string {
+	switch {
+	case percent >= 95:
+		return "critical"
+	case percent >= 80:
+		return "warning"
+	default:
+		return "positive"
+	}
+}
+
+func kimiStatusMessage(status string) string {
+	switch status {
+	case "critical":
+		return "Usage is critical. Consider reducing usage or waiting for reset."
+	case "danger":
+		return "Usage is high. Monitor closely."
+	case "warning":
+		return "Usage is moderate. No immediate action needed."
+	default:
+		return "Usage is healthy."
+	}
 }

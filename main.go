@@ -663,8 +663,14 @@ func run() error {
 
 	var minimaxClient *api.MiniMaxClient
 	if cfg.HasProvider("minimax") {
-		minimaxClient = api.NewMiniMaxClient(cfg.MiniMaxAPIKey, logger)
-		logger.Info("MiniMax API client configured")
+		minimaxClient = api.NewMiniMaxClient(cfg.MiniMaxAPIKey, cfg.MiniMaxBaseURL, cfg.MiniMaxRegion, logger)
+		logger.Info("MiniMax API client configured", "region", cfg.MiniMaxRegion, "base_url", cfg.MiniMaxBaseURL)
+	}
+
+	var kimiClient *api.KimiClient
+	if cfg.HasProvider("kimi") {
+		kimiClient = api.NewKimiClient(cfg.KimiAPIKey, cfg.KimiBaseURL, cfg.KimiRegion, logger)
+		logger.Info("Kimi API client configured", "region", cfg.KimiRegion, "base_url", cfg.KimiBaseURL)
 	}
 
 	// Create components
@@ -748,6 +754,11 @@ func run() error {
 		minimaxTr = tracker.NewMiniMaxTracker(db, logger)
 	}
 
+	var kimiTr *tracker.KimiTracker
+	if cfg.HasProvider("kimi") {
+		kimiTr = tracker.NewKimiTracker(db, logger)
+	}
+
 	var antigravityAg *agent.AntigravityAgent
 	if antigravityClient != nil {
 		antigravitySm := agent.NewSessionManager(db, "antigravity", idleTimeout, logger)
@@ -758,6 +769,12 @@ func run() error {
 	if minimaxClient != nil {
 		minimaxSm := agent.NewSessionManager(db, "minimax", idleTimeout, logger)
 		minimaxAg = agent.NewMiniMaxAgent(minimaxClient, db, minimaxTr, cfg.PollInterval, logger, minimaxSm)
+	}
+
+	var kimiAg *agent.KimiAgent
+	if kimiClient != nil {
+		kimiSm := agent.NewSessionManager(db, "kimi", idleTimeout, logger)
+		kimiAg = agent.NewKimiAgent(kimiClient, db, kimiTr, cfg.PollInterval, logger, kimiSm)
 	}
 
 	// Create notification engine
@@ -789,6 +806,9 @@ func run() error {
 	}
 	if minimaxAg != nil {
 		minimaxAg.SetNotifier(notifier)
+	}
+	if kimiAg != nil {
+		kimiAg.SetNotifier(notifier)
 	}
 
 	// Wire polling checks - agents skip poll when telemetry disabled
@@ -859,6 +879,9 @@ func run() error {
 	if minimaxAg != nil {
 		minimaxAg.SetPollingCheck(func() bool { return isPollingEnabled("minimax") })
 	}
+	if kimiAg != nil {
+		kimiAg.SetPollingCheck(func() bool { return isPollingEnabled("kimi") })
+	}
 
 	// Wire reset callbacks to trackers
 	tr.SetOnReset(func(quotaName string) {
@@ -894,6 +917,11 @@ func run() error {
 			notifier.Check(notify.QuotaStatus{Provider: "minimax", QuotaKey: modelName, ResetOccurred: true})
 		})
 	}
+	if kimiTr != nil {
+		kimiTr.SetOnReset(func(quotaName string) {
+			notifier.Check(notify.QuotaStatus{Provider: "kimi", QuotaKey: quotaName, ResetOccurred: true})
+		})
+	}
 
 	handler := web.NewHandler(db, tr, logger, nil, cfg, zaiTr)
 	handler.SetVersion(version)
@@ -912,6 +940,9 @@ func run() error {
 	}
 	if minimaxTr != nil {
 		handler.SetMiniMaxTracker(minimaxTr)
+	}
+	if kimiTr != nil {
+		handler.SetKimiTracker(kimiTr)
 	}
 	agentMgr := agent.NewAgentManager(logger)
 	if ag != nil {
@@ -935,6 +966,9 @@ func run() error {
 	if minimaxAg != nil {
 		agentMgr.RegisterFactory("minimax", func() (agent.AgentRunner, error) { return minimaxAg, nil })
 	}
+	if kimiAg != nil {
+		agentMgr.RegisterFactory("kimi", func() (agent.AgentRunner, error) { return kimiAg, nil })
+	}
 	handler.SetAgentManager(agentMgr)
 	updater := update.NewUpdater(version, logger)
 	handler.SetUpdater(updater)
@@ -954,7 +988,7 @@ func run() error {
 
 	// Start configured agents through the manager.
 	startedAny := false
-	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax"} {
+	for _, providerKey := range []string{"synthetic", "zai", "anthropic", "copilot", "codex", "antigravity", "minimax", "kimi"} {
 		if !isPollingEnabled(providerKey) {
 			continue
 		}
@@ -1358,6 +1392,9 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("minimax") {
 		fmt.Println("║  API:       minimax.io/coding_plan   ║")
 	}
+	if cfg.HasProvider("kimi") {
+		fmt.Println("║  API:       kimi.com/coding          ║")
+	}
 
 	fmt.Printf("║  Polling:   every %s              ║\n", cfg.PollInterval)
 	fmt.Printf("║  Dashboard: http://localhost:%d    ║\n", cfg.Port)
@@ -1399,6 +1436,9 @@ func printBanner(cfg *config.Config, version string) {
 	if cfg.HasProvider("minimax") {
 		fmt.Printf("MiniMax API Key:   %s\n", redactAPIKey(cfg.MiniMaxAPIKey))
 	}
+	if cfg.HasProvider("kimi") {
+		fmt.Printf("Kimi API Key:      %s\n", redactAPIKey(cfg.KimiAPIKey))
+	}
 	fmt.Println()
 }
 
@@ -1437,6 +1477,7 @@ func printHelp() {
 	fmt.Println("  COPILOT_TOKEN           GitHub Copilot token (PAT with copilot scope)")
 	fmt.Println("  CODEX_TOKEN             Codex OAuth token (recommended; required for Codex-only)")
 	fmt.Println("  MINIMAX_API_KEY         MiniMax API key")
+	fmt.Println("  KIMI_API_KEY            Kimi API key")
 	fmt.Println("  CODEX_HOME              Optional Codex auth directory (uses CODEX_HOME/auth.json)")
 	fmt.Println("  ONWATCH_POLL_INTERVAL   Polling interval in seconds")
 	fmt.Println("  ONWATCH_PORT            Dashboard HTTP port")

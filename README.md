@@ -2,30 +2,35 @@
 
 **Free, open-source AI API quota monitoring for developers.**
 
-Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), and Antigravity in one place.
+> **Note:** This is a fork of the original [onWatch](https://github.com/onllm-dev/onwatch) project with additional features:
+> - **Kimi Code** usage tracking (International & China regions)
+> - **MiniMax** regional support (International & China/海螺AI)
+> - Regional endpoint auto-detection based on `KIMI_REGION` and `MINIMAX_REGION` settings
+
+Track usage across [Synthetic](https://synthetic.new), [Z.ai](https://z.ai), [Anthropic](https://anthropic.com), [Codex](https://openai.com/codex), [GitHub Copilot](https://github.com/features/copilot), [MiniMax](https://platform.minimax.io), [Kimi](https://kimi.com), and Antigravity in one place.
 See history, get alerts, and open a local web dashboard before you hit throttling or run over budget.
 
-**Links:** [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
+**Links:** [Original Project](https://github.com/onllm-dev/onwatch) | [Website](https://onwatch.onllm.dev) | [Buy Me a Coffee](https://buymeacoffee.com/prakersh)
 
 **Trust & Quality**
 
 [![Stars](https://img.shields.io/github/stars/onllm-dev/onwatch?style=for-the-badge&logo=github&logoColor=white&label=Stars&color=181717)](https://github.com/onllm-dev/onwatch/stargazers)
 [![Awesome Go](https://img.shields.io/badge/Awesome_Go-Mentioned-22C55E?style=for-the-badge)](https://github.com/avelino/awesome-go)
-[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)  
+[![Downloads](https://img.shields.io/github/downloads/onllm-dev/onwatch/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=181717)](https://github.com/onllm-dev/onwatch/releases)
 [![Coverage](https://img.shields.io/codecov/c/github/onllm-dev/onwatch?style=for-the-badge&logo=codecov&logoColor=white&label=Coverage)](https://codecov.io/gh/onllm-dev/onwatch)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-brightgreen?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/onllm-dev/onwatch/v2?style=for-the-badge)](https://goreportcard.com/report/github.com/onllm-dev/onwatch/v2)
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.11.17-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.11.17)
+[![Version](https://img.shields.io/badge/Version-v2.11.18-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
 
-onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all seven providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
+onWatch fills the gap between "current usage snapshot" and the historical, per-cycle, cross-session view that developers actually need. It runs as a lightweight background agent (<50 MB RAM with all providers polling in parallel), stores historical data in SQLite, and serves a Material Design 3 web dashboard with dark/light mode.
 
-It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Antigravity**, and others.
+It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copilot, MiniMax, Kimi, or Antigravity API keys, including **Cline**, **Roo Code**, **Kilo Code**, **Claude Code**, **Codex CLI**, **Cursor**, **GitHub Copilot**, **MiniMax Coding Plan**, **Kimi Code**, **Antigravity**, and others.
 
 **Zero telemetry. Single binary. All data stays on your machine.**
 
@@ -106,22 +111,38 @@ The Docker image uses a distroless base (~10-12 MB) and runs as non-root. Data p
 Edit `~/.onwatch/.env` (or `.env` in the project directory if built from source):
 
 ```bash
+# Core providers
 SYNTHETIC_API_KEY=syn_your_key_here       # https://synthetic.new/settings/api
 ZAI_API_KEY=your_zai_key_here             # https://www.z.ai/api-keys
 ANTHROPIC_TOKEN=your_token_here           # Auto-detected from Claude Code credentials
 CODEX_TOKEN=your_token_here               # Recommended for Codex-only setups
 COPILOT_TOKEN=ghp_your_token_here         # GitHub PAT with copilot scope (Beta)
+
+# MiniMax (International or China/海螺AI)
+MINIMAX_API_KEY=your_minimax_key_here     # https://platform.minimax.io or https://platform.minimax.chat
+# MINIMAX_REGION=china                    # Uncomment for China domestic (海螺AI)
+
+# Kimi (International or China/Moonshot)
+KIMI_API_KEY=sk-kimi-your_key_here        # https://www.kimi.com/code or https://platform.moonshot.cn
+# KIMI_REGION=china                       # Uncomment for China domestic (Moonshot/月之暗面)
+
+# Admin credentials
 ONWATCH_ADMIN_USER=admin
 ONWATCH_ADMIN_PASS=changeme
 ```
 
 At least one provider key is required. Configure any combination to track them in parallel. Anthropic tokens are auto-detected from Claude Code credentials (macOS Keychain, Linux keyring, or `~/.claude/.credentials.json`). For Codex-only setups, set `CODEX_TOKEN` in `.env`; during runtime onWatch re-reads Codex auth state from `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and picks up token changes. Copilot tokens require a GitHub Personal Access Token (classic) with the `copilot` scope.
 
+**Regional Support:**
+- **MiniMax**: Set `MINIMAX_REGION=china` for 海螺AI (api.minimax.chat). Default is international (api.minimax.io).
+- **Kimi**: Set `KIMI_REGION=china` for Moonshot/月之暗面 (api.moonshot.cn). Default is international (api.kimi.com).
+
 Provider setup guides:
 - [Windows Setup Guide](docs/WINDOWS_SETUP.md) - Detailed Windows installation & manual configuration
 - [Codex Setup Guide](docs/CODEX_SETUP.md)
 - [Copilot Setup Guide](docs/COPILOT_SETUP.md)
-- [MiniMax Setup Guide](docs/MINIMAX_SETUP.md)
+- [MiniMax Setup Guide](docs/MINIMAX_SETUP.md) - Includes regional configuration
+- [Kimi Setup Guide](docs/KIMI_SETUP.md) - Includes regional configuration
 - [Antigravity Setup Guide](docs/ANTIGRAVITY_SETUP.md)
 
 ### Run

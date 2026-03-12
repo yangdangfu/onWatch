@@ -20,11 +20,24 @@ var (
 	ErrMiniMaxInvalidResponse = errors.New("minimax: invalid response")
 )
 
+// MiniMax region constants
+const (
+	MiniMaxRegionInternational = "international"
+	MiniMaxRegionChina         = "china"
+)
+
+// Default endpoints for each region
+const (
+	MiniMaxInternationalEndpoint = "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
+	MiniMaxChinaEndpoint         = "https://api.minimax.chat/v1/api/openplatform/coding_plan/remains"
+)
+
 // MiniMaxClient is an HTTP client for the MiniMax coding plan remains API.
 type MiniMaxClient struct {
 	httpClient *http.Client
 	apiKey     string
 	baseURL    string
+	region     string // "international" or "china"
 	logger     *slog.Logger
 }
 
@@ -45,10 +58,38 @@ func WithMiniMaxTimeout(d time.Duration) MiniMaxOption {
 	}
 }
 
+// WithMiniMaxRegion sets the region (international or china).
+func WithMiniMaxRegion(region string) MiniMaxOption {
+	return func(c *MiniMaxClient) {
+		c.region = region
+	}
+}
+
 // NewMiniMaxClient creates a new MiniMax client.
-func NewMiniMaxClient(apiKey string, logger *slog.Logger, opts ...MiniMaxOption) *MiniMaxClient {
+// If baseURL is empty, it will be set based on the region.
+func NewMiniMaxClient(apiKey string, baseURL string, region string, logger *slog.Logger, opts ...MiniMaxOption) *MiniMaxClient {
 	if logger == nil {
 		logger = slog.Default()
+	}
+
+	// Normalize region
+	if region == "" {
+		region = MiniMaxRegionInternational
+	}
+	region = strings.ToLower(region)
+
+	// Normalize region aliases
+	if region == "cn" || region == "domestic" {
+		region = MiniMaxRegionChina
+	}
+
+	// Set default base URL based on region if not provided
+	if baseURL == "" {
+		if region == MiniMaxRegionChina {
+			baseURL = MiniMaxChinaEndpoint
+		} else {
+			baseURL = MiniMaxInternationalEndpoint
+		}
 	}
 
 	client := &MiniMaxClient{
@@ -64,7 +105,8 @@ func NewMiniMaxClient(apiKey string, logger *slog.Logger, opts ...MiniMaxOption)
 			},
 		},
 		apiKey:  apiKey,
-		baseURL: "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+		baseURL: baseURL,
+		region:  region,
 		logger:  logger,
 	}
 
@@ -89,7 +131,7 @@ func (c *MiniMaxClient) FetchRemains(ctx context.Context) (*MiniMaxRemainsRespon
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	c.logger.Debug("fetching MiniMax remains", "url", c.baseURL)
+	c.logger.Debug("fetching MiniMax remains", "url", c.baseURL, "region", c.region)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

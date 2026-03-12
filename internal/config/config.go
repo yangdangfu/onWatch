@@ -40,7 +40,14 @@ type Config struct {
 	AntigravityEnabled   bool   // true if auto-detection should be attempted
 
 	// MiniMax provider configuration
-	MiniMaxAPIKey string // MINIMAX_API_KEY
+	MiniMaxAPIKey  string // MINIMAX_API_KEY
+	MiniMaxBaseURL string // MINIMAX_BASE_URL
+	MiniMaxRegion  string // MINIMAX_REGION: "international" (default) or "china"
+
+	// Kimi provider configuration
+	KimiAPIKey  string // KIMI_API_KEY
+	KimiBaseURL string // KIMI_BASE_URL
+	KimiRegion  string // KIMI_REGION: "international" (default) or "china"
 
 	// Shared configuration
 	PollInterval       time.Duration // ONWATCH_POLL_INTERVAL (seconds → Duration)
@@ -153,6 +160,9 @@ var onwatchEnvKeys = []string{
 	"CODEX_TOKEN",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
+	"MINIMAX_REGION",
+	"KIMI_API_KEY",
+	"KIMI_REGION",
 	"ONWATCH_",
 }
 
@@ -234,6 +244,13 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// MiniMax provider
 	cfg.MiniMaxAPIKey = strings.TrimSpace(os.Getenv("MINIMAX_API_KEY"))
+	cfg.MiniMaxBaseURL = os.Getenv("MINIMAX_BASE_URL")
+	cfg.MiniMaxRegion = os.Getenv("MINIMAX_REGION")
+
+	// Kimi provider
+	cfg.KimiAPIKey = strings.TrimSpace(os.Getenv("KIMI_API_KEY"))
+	cfg.KimiBaseURL = os.Getenv("KIMI_BASE_URL")
+	cfg.KimiRegion = os.Getenv("KIMI_REGION")
 
 	// Poll Interval (seconds) - ONWATCH_* first, SYNTRACK_* fallback
 	if flags.interval > 0 {
@@ -334,6 +351,28 @@ func (c *Config) applyDefaults() {
 	if c.ZaiBaseURL == "" {
 		c.ZaiBaseURL = "https://api.z.ai/api"
 	}
+	// Set MiniMax base URL based on region if not explicitly set
+	if c.MiniMaxBaseURL == "" {
+		switch strings.ToLower(c.MiniMaxRegion) {
+		case "china", "cn", "domestic":
+			// 海螺AI开放平台 (China domestic)
+			c.MiniMaxBaseURL = "https://api.minimax.chat/v1/api/openplatform/coding_plan/remains"
+		default:
+			// International (default)
+			c.MiniMaxBaseURL = "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
+		}
+	}
+	// Set Kimi base URL based on region if not explicitly set
+	if c.KimiBaseURL == "" {
+		switch strings.ToLower(c.KimiRegion) {
+		case "china", "cn", "domestic":
+			// Moonshot API (China domestic)
+			c.KimiBaseURL = "https://api.moonshot.cn/v1/users/me/balance"
+		default:
+			// International (default) - uses /usages endpoint
+			c.KimiBaseURL = "https://api.kimi.com/coding/v1/usages"
+		}
+	}
 	if c.SessionIdleTimeout == 0 {
 		c.SessionIdleTimeout = 600 * time.Second
 	}
@@ -388,6 +427,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.MiniMaxAPIKey != "" {
 		providers = append(providers, "minimax")
 	}
+	if c.KimiAPIKey != "" {
+		providers = append(providers, "kimi")
+	}
 	return providers
 }
 
@@ -408,6 +450,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.AntigravityEnabled
 	case "minimax":
 		return c.MiniMaxAPIKey != ""
+	case "kimi":
+		return c.KimiAPIKey != ""
 	}
 	return false
 }
@@ -434,6 +478,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.MiniMaxAPIKey != "" {
+		count++
+	}
+	if c.KimiAPIKey != "" {
 		count++
 	}
 	return count > 1

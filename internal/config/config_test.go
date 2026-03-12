@@ -204,6 +204,115 @@ func TestConfig_MiniMaxProvider(t *testing.T) {
 	}
 }
 
+func TestConfig_KimiProvider(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("KIMI_API_KEY", "sk-kimi-test-key")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if !cfg.HasProvider("kimi") {
+		t.Fatal("HasProvider('kimi') should be true")
+	}
+	providers := cfg.AvailableProviders()
+	if len(providers) != 1 || providers[0] != "kimi" {
+		t.Fatalf("AvailableProviders() = %v, want [kimi]", providers)
+	}
+}
+
+func TestConfig_KimiRegion_International(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("KIMI_API_KEY", "sk-kimi-test-key")
+	os.Setenv("KIMI_REGION", "international")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.KimiRegion != "international" {
+		t.Fatalf("KimiRegion = %q, want 'international'", cfg.KimiRegion)
+	}
+	// Check default URL for international region
+	if cfg.KimiBaseURL != "https://api.kimi.com/coding/v1/quota" {
+		t.Fatalf("KimiBaseURL = %q, want international endpoint", cfg.KimiBaseURL)
+	}
+}
+
+func TestConfig_KimiRegion_China(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("KIMI_API_KEY", "sk-moonshot-test-key")
+	os.Setenv("KIMI_REGION", "china")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.KimiRegion != "china" {
+		t.Fatalf("KimiRegion = %q, want 'china'", cfg.KimiRegion)
+	}
+	// Check default URL for China region
+	if cfg.KimiBaseURL != "https://api.moonshot.cn/v1/users/me/billing/quota" {
+		t.Fatalf("KimiBaseURL = %q, want China endpoint", cfg.KimiBaseURL)
+	}
+}
+
+func TestConfig_KimiRegion_Aliases(t *testing.T) {
+	tests := []struct {
+		region    string
+		wantChina bool
+	}{
+		{"cn", true},
+		{"domestic", true},
+		{"CHINA", true},
+		{"CN", true},
+		{"", false}, // default is international
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			os.Clearenv()
+			os.Setenv("KIMI_API_KEY", "sk-kimi-test-key")
+			if tt.region != "" {
+				os.Setenv("KIMI_REGION", tt.region)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			expectedEndpoint := "https://api.kimi.com/coding/v1/quota"
+			if tt.wantChina {
+				expectedEndpoint = "https://api.moonshot.cn/v1/users/me/billing/quota"
+			}
+
+			if cfg.KimiBaseURL != expectedEndpoint {
+				t.Fatalf("KimiBaseURL = %q, want %q", cfg.KimiBaseURL, expectedEndpoint)
+			}
+		})
+	}
+}
+
+func TestConfig_KimiBaseURL_Override(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("KIMI_API_KEY", "sk-kimi-test-key")
+	os.Setenv("KIMI_BASE_URL", "https://custom.api.endpoint/quota")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	// Explicit BASE_URL should override region default
+	if cfg.KimiBaseURL != "https://custom.api.endpoint/quota" {
+		t.Fatalf("KimiBaseURL = %q, want custom endpoint", cfg.KimiBaseURL)
+	}
+}
+
 func TestConfig_AllowsNoProvidersConfigured(t *testing.T) {
 	os.Clearenv()
 
